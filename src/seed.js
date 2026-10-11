@@ -20,9 +20,12 @@ function seedAdmin() {
 }
 
 function seedDemo() {
+  // Semua akun demo memakai password yang sama, jadi cukup di-hash sekali (bcrypt sengaja lambat;
+  // di-hash 20 kali membuat start lama di server dengan CPU kecil). Hanya untuk akun demo.
+  const demoHash = hash(DEMO_PASSWORD);
   const user = (nama, email, role, hp) =>
     db.prepare('INSERT INTO users (nama, email, password_hash, no_hp, role) VALUES (?, ?, ?, ?, ?)')
-      .run(nama, email, hash(DEMO_PASSWORD), hp || null, role).lastInsertRowid;
+      .run(nama, email, demoHash, hp || null, role).lastInsertRowid;
 
   const customers = {
     budi: user('Budi Santoso', 'budi@example.com', 'customer', '081234567801'),
