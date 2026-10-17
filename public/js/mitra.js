@@ -1,7 +1,7 @@
 import { api, post, put, del } from './api.js';
 import { state } from './state.js';
 import { pickerMap } from './map.js';
-import { html, raw, actions, ctx, rupiah, tgl, badge, stars, toast, formData, getPosition } from './ui.js';
+import { html, raw, actions, ctx, rupiah, tgl, badge, stars, toast, formData, getPosition, confirmDialog, promptDialog } from './ui.js';
 
 const statusAlert = (st) => st === 'Aktif' ? '' :
   st === 'Ditolak'
@@ -41,7 +41,7 @@ async function booking() {
         <div><h3>#${b.id} · ${b.customer_nama}</h3><p class="muted">${b.kendaraan_merk} • ${b.kendaraan_nopol} · ${tgl(b.tanggal_booking)}${b.customer_hp ? ' · ' + b.customer_hp : ''}</p></div>
         ${badge(b.status)}
       </div>
-      <p class="meta">Layanan: ${b.layanan.map((l) => `${l.nama_servis} (${rupiah(l.harga)})`).join(', ')}${b.jarak_km !== null ? ` · Jarak customer ${b.jarak_km} km` : ''}</p>
+      <p class="meta">Layanan: ${[...b.layanan.map((l) => `${l.nama_servis} (${rupiah(l.harga)})`), b.layanan_lain ? `${b.layanan_lain} (layanan lain)` : ''].filter(Boolean).join(', ') || '—'}${b.jarak_km !== null ? ` · Jarak customer ${b.jarak_km} km` : ''}</p>
       <p class="muted">Keluhan: ${b.keluhan}</p>
       <p class="muted">Mekanik: ${b.mekanik_nama || '—'}${b.sparepart.length ? ' · Sparepart: ' + b.sparepart.map((s) => `${s.nama} ×${s.qty}`).join(', ') : ''}</p>
       ${b.invoice_id ? html`<p><b>Invoice ${rupiah(b.invoice_total)}</b> ${badge(b.invoice_status)} ${b.invoice_metode ? html`<span class="muted">via ${b.invoice_metode}</span>` : ''}</p>` : ''}
@@ -60,7 +60,7 @@ async function booking() {
 }
 
 actions.acceptBooking = async (form) => { await post(`/booking/${form.dataset.id}/terima`, formData(form)); toast('Booking diterima dan mekanik ditugaskan'); ctx.refresh(); };
-actions.rejectBooking = async (el) => { if (!confirm('Tolak booking ini?')) return; await post(`/booking/${el.dataset.id}/tolak`); toast('Booking ditolak'); ctx.refresh(); };
+actions.rejectBooking = async (el) => { if (!(await confirmDialog('Tolak booking ini? Customer akan mendapat notifikasi penolakan.', { title: 'Tolak booking', confirmLabel: 'Ya, tolak', danger: true }))) return; await post(`/booking/${el.dataset.id}/tolak`); toast('Booking ditolak'); ctx.refresh(); };
 actions.makeInvoice = async (el) => { await post(`/booking/${el.dataset.id}/invoice`); toast('Invoice dibuat'); ctx.refresh(); };
 actions.markPaid = async (el) => { await post(`/booking/${el.dataset.id}/tandai-lunas`); toast('Invoice ditandai lunas'); ctx.refresh(); };
 
@@ -94,8 +94,8 @@ async function mekanik() {
 }
 actions.addMekanik = async (form) => { await post('/mitra/mekanik', formData(form)); toast('Akun mekanik dibuat'); ctx.refresh(); };
 actions.resetMekanikPw = async (el) => {
-  const pw = prompt(`Password baru untuk ${el.dataset.nama} (minimal 8 karakter):`);
-  if (pw === null) return;
+  const pw = await promptDialog(`Masukkan password baru untuk ${el.dataset.nama} (minimal 8 karakter).`, { title: 'Reset password mekanik', confirmLabel: 'Simpan' });
+  if (pw === null || pw === '') return;
   await post(`/mitra/mekanik/${el.dataset.id}/password`, { password: pw });
   toast(`Password ${el.dataset.nama} diganti. Sampaikan ke yang bersangkutan.`);
 };
@@ -128,7 +128,7 @@ actions.saveSparepart = async (form) => {
   if (form.dataset.id) await put(`/mitra/sparepart/${form.dataset.id}`, d); else await post('/mitra/sparepart', d);
   state.edit = null; toast('Sparepart disimpan'); ctx.refresh();
 };
-actions.delSparepart = async (el) => { if (!confirm('Hapus sparepart ini dari katalog?')) return; await del(`/mitra/sparepart/${el.dataset.id}`); ctx.refresh(); };
+actions.delSparepart = async (el) => { if (!(await confirmDialog('Hapus sparepart ini dari katalog? Riwayat pesanan lama tetap tersimpan.', { title: 'Hapus sparepart', confirmLabel: 'Hapus', danger: true }))) return; await del(`/mitra/sparepart/${el.dataset.id}`); ctx.refresh(); };
 
 async function layanan() {
   const r = await api('/mitra/servis');
@@ -153,7 +153,7 @@ actions.saveServis = async (form) => {
   if (form.dataset.id) await put(`/mitra/servis/${form.dataset.id}`, d); else await post('/mitra/servis', d);
   state.edit = null; toast('Layanan disimpan'); ctx.refresh();
 };
-actions.delServis = async (el) => { if (!confirm('Hapus layanan ini?')) return; await del(`/mitra/servis/${el.dataset.id}`); ctx.refresh(); };
+actions.delServis = async (el) => { if (!(await confirmDialog('Hapus layanan ini dari daftar bengkel Anda?', { title: 'Hapus layanan', confirmLabel: 'Hapus', danger: true }))) return; await del(`/mitra/servis/${el.dataset.id}`); ctx.refresh(); };
 
 async function profil() {
   const { item: b } = await api('/mitra/bengkel');

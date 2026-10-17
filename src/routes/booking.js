@@ -6,7 +6,7 @@ const { readKendaraan } = require('../vehicle');
 const { notify, ownerOf, mekanikUser } = require('../notify');
 
 const BOOKING_SQL = `
-SELECT bk.id, bk.tanggal_booking, bk.keluhan, bk.status, bk.jarak_km, bk.created_at,
+SELECT bk.id, bk.tanggal_booking, bk.keluhan, bk.layanan_lain, bk.status, bk.jarak_km, bk.created_at,
        bk.id_bengkel, b.nama AS bengkel_nama, b.alamat AS bengkel_alamat,
        bk.id_customer, u.nama AS customer_nama, u.no_hp AS customer_hp,
        k.jenis AS kendaraan_jenis, k.merk AS kendaraan_merk, k.no_polisi AS kendaraan_nopol,
@@ -70,7 +70,12 @@ router.post('/', requireRole('customer'), (req, res) => {
   if (!bengkel) throw notFound('Bengkel tidak ditemukan atau belum aktif');
 
   const ids = Array.isArray(b.id_servis) ? [...new Set(b.id_servis.map((x) => int(x, 1)))] : [];
-  if (!ids.length || ids.length > 10 || ids.includes(null)) throw bad('Pilih minimal satu layanan');
+  // Layanan bebas ("Layanan lainnya"): dipakai bila layanan yang dibutuhkan tidak ada di daftar bengkel.
+  const layananLain = b.layanan_lain != null && String(b.layanan_lain).trim() !== ''
+    ? need(str(b.layanan_lain, { min: 3, max: 120 }), 'Layanan lainnya minimal 3 karakter')
+    : null;
+  if (ids.length > 10 || ids.includes(null)) throw bad('Layanan tidak valid');
+  if (!ids.length && !layananLain) throw bad('Pilih minimal satu layanan atau isi layanan lainnya');
   const servis = ids.map((id) => {
     const s = db.prepare('SELECT * FROM jenis_servis WHERE id = ? AND id_bengkel = ? AND aktif = 1').get(id, bengkel.id);
     if (!s) throw bad('Layanan tidak tersedia di bengkel ini');
@@ -104,13 +109,14 @@ router.post('/', requireRole('customer'), (req, res) => {
       throw bad(`Bengkel ini hanya melayani ${bengkel.jenis.toLowerCase()}`);
 
     const bid = db.prepare(
-      `INSERT INTO booking (id_customer, id_bengkel, id_kendaraan, tanggal_booking, keluhan, jarak_km) VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(req.user.id, bengkel.id, kend.id, b.tanggal, keluhan, jarak).lastInsertRowid;
+      `INSERT INTO booking (id_customer, id_bengkel, id_kendaraan, tanggal_booking, keluhan, layanan_lain, jarak_km) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(req.user.id, bengkel.id, kend.id, b.tanggal, keluhan, layananLain, jarak).lastInsertRowid;
     const ins = db.prepare('INSERT INTO booking_detail (id_booking, id_servis, harga) VALUES (?, ?, ?)');
     servis.forEach((s) => ins.run(bid, s.id, s.harga));
     return bid;
   })();
-  notify(bengkel.id_pemilik, 'Booking baru', `${req.user.nama} · ${servis.map((x) => x.nama_servis).join(', ')}`, '#/mitra/booking');
+  const label = [...servis.map((x) => x.nama_servis), layananLain ? `${layananLain} (layanan lain)` : null].filter(Boolean).join(', ');
+  notify(bengkel.id_pemilik, 'Booking baru', `${req.user.nama} · ${label}`, '#/mitra/booking');
   req.params.id = id;
   res.status(201);
   done(req, res);

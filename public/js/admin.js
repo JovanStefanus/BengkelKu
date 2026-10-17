@@ -1,5 +1,5 @@
 import { api, post, del } from './api.js';
-import { html, actions, ctx, rupiah, tgl, badge, stars, toast } from './ui.js';
+import { html, actions, ctx, rupiah, tgl, badge, stars, toast, confirmDialog } from './ui.js';
 
 async function ringkasan() {
   const s = await api('/admin/stats');
@@ -34,7 +34,7 @@ async function bengkel() {
           : html`<button class="ghost sm danger" data-action="rejectBengkel" data-id="${b.id}">Nonaktifkan</button>`}</td></tr>`)}</tbody></table></div>`;
 }
 actions.approveBengkel = async (el) => { await post(`/admin/bengkel/${el.dataset.id}/setujui`); toast('Bengkel disetujui dan kini tampil di pencarian'); ctx.refresh(); };
-actions.rejectBengkel = async (el) => { if (!confirm('Tolak/nonaktifkan bengkel ini? Bengkel tidak akan tampil di pencarian.')) return; await post(`/admin/bengkel/${el.dataset.id}/tolak`); toast('Status bengkel diperbarui'); ctx.refresh(); };
+actions.rejectBengkel = async (el) => { if (!(await confirmDialog('Tolak / nonaktifkan bengkel ini? Bengkel tidak akan tampil di pencarian customer.', { title: 'Tolak bengkel', confirmLabel: 'Ya, tolak', danger: true }))) return; await post(`/admin/bengkel/${el.dataset.id}/tolak`); toast('Status bengkel diperbarui'); ctx.refresh(); };
 
 async function transaksi() {
   const [bk, ps] = await Promise.all([api('/booking'), api('/pesanan')]);
@@ -61,7 +61,7 @@ async function moderasi() {
         <td><button class="ghost sm danger" data-action="deleteRating" data-id="${r.id}">Hapus</button></td></tr>`) : html`<tr><td colspan="5" class="empty">Belum ada ulasan.</td></tr>`}</tbody></table></div>`;
 }
 actions.toggleSparepart = async (el) => { await post(`/admin/sparepart/${el.dataset.id}/toggle`); ctx.refresh(); };
-actions.deleteRating = async (el) => { if (!confirm('Hapus ulasan ini?')) return; await del(`/admin/rating/${el.dataset.id}`); toast('Ulasan dihapus'); ctx.refresh(); };
+actions.deleteRating = async (el) => { if (!(await confirmDialog('Hapus ulasan ini? Tindakan ini tidak dapat dibatalkan.', { title: 'Hapus ulasan', confirmLabel: 'Hapus', danger: true }))) return; await del(`/admin/rating/${el.dataset.id}`); toast('Ulasan dihapus'); ctx.refresh(); };
 
 async function pengguna() {
   const r = await api('/admin/users');

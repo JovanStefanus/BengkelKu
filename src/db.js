@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS booking (
   id_mekanik INTEGER REFERENCES mekanik(id),
   tanggal_booking TEXT NOT NULL,
   keluhan TEXT NOT NULL,
+  layanan_lain TEXT,
   status TEXT NOT NULL DEFAULT 'Menunggu Verifikasi'
     CHECK (status IN ('Menunggu Verifikasi','Diterima','Dikerjakan','Selesai','Ditolak','Dibatalkan')),
   jarak_km REAL,
@@ -169,6 +170,10 @@ CREATE INDEX IF NOT EXISTS idx_sparepart_bengkel ON sparepart(id_bengkel);
 const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
 if (!userCols.includes('token_version')) {
   db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0');
+}
+const bookCols = db.prepare('PRAGMA table_info(booking)').all().map((c) => c.name);
+if (!bookCols.includes('layanan_lain')) {
+  db.exec('ALTER TABLE booking ADD COLUMN layanan_lain TEXT');
 }
 
 module.exports = db;

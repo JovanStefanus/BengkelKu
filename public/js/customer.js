@@ -2,7 +2,7 @@ import { api, post, del } from './api.js';
 import { showSearchMap } from './map.js';
 import { profilSection, passwordSection } from './shared.js';
 import { state, saveCart, DEFAULT_LOC } from './state.js';
-import { html, raw, actions, ctx, rupiah, tgl, badge, stars, toast, formData, localDateTimeMin, getPosition } from './ui.js';
+import { html, raw, actions, ctx, rupiah, tgl, badge, stars, toast, formData, localDateTimeMin, getPosition, confirmDialog, emptyState } from './ui.js';
 
 // ---------- Cari bengkel & booking ----------
 async function cari() {
@@ -29,7 +29,7 @@ async function cari() {
       </label>
       <span class="muted">${bk.items.length} bengkel ditemukan, diurutkan dari yang terdekat</span>
     </div>
-    ${bk.items.length ? bk.items.map(bengkelCard) : html`<div class="panel empty">Tidak ada bengkel aktif dalam radius ${state.radius} km. Coba perbesar radius.</div>`}`;
+    ${bk.items.length ? bk.items.map(bengkelCard) : emptyState('🔍', 'Tidak ada bengkel di sekitar', `Belum ada bengkel aktif dalam radius ${state.radius} km. Coba perbesar radius pencarian.`)}`;
 }
 
 function bengkelCard(b) {
@@ -47,6 +47,11 @@ function bengkelCard(b) {
       <input type="hidden" name="id_bengkel" value="${b.id}">
       <label>Layanan yang dibutuhkan</label>
       <div class="checks">${b.layanan.map((l) => html`<label><input type="checkbox" name="id_servis" value="${l.id}"> ${l.nama_servis} (${rupiah(l.harga)})</label>`)}</div>
+      <label class="othersvc-toggle"><input type="checkbox" name="lain" value="1" data-change="toggleLain"> Layanan lainnya (tidak ada di daftar)</label>
+      <div class="othersvc" hidden>
+        <label>Sebutkan layanan yang dibutuhkan</label>
+        <input name="layanan_lain" maxlength="120" placeholder="mis. las bodi, bongkar mesin, servis AC">
+      </div>
       <div class="grid2">
         <div><label>Kendaraan</label>
           <select name="id_kendaraan" data-change="kendaraanChange">
@@ -88,12 +93,16 @@ actions.focusBengkel = (el) => {
 actions.setRadius = (el) => { state.radius = Number(el.value); ctx.refresh(); };
 actions.toggleBook = (el) => { const f = document.getElementById('bf-' + el.dataset.id); f.hidden = !f.hidden; };
 actions.kendaraanChange = (el) => { el.closest('form').querySelector('.newveh').hidden = el.value !== ''; };
+actions.toggleLain = (el) => { el.closest('form').querySelector('.othersvc').hidden = !el.checked; };
 actions.submitBooking = async (form) => {
   const d = formData(form);
+  const lain = d.lain === '1' ? (d.layanan_lain || '').trim() : '';
   const body = { id_bengkel: d.id_bengkel, id_servis: [].concat(d.id_servis || []), tanggal: d.tanggal ? new Date(d.tanggal).toISOString() : '', keluhan: d.keluhan, lat: state.loc.lat, lng: state.loc.lng };
   if (d.id_kendaraan) body.id_kendaraan = d.id_kendaraan;
   else body.kendaraan = { jenis: d.k_jenis, merk: d.k_merk, no_polisi: d.k_nopol };
-  if (!body.id_servis.length) throw new Error('Pilih minimal satu layanan');
+  if (d.lain === '1' && lain.length < 3) throw new Error('Sebutkan layanan lainnya (minimal 3 karakter)');
+  if (lain) body.layanan_lain = lain;
+  if (!body.id_servis.length && !lain) throw new Error('Pilih minimal satu layanan, atau tandai "Layanan lainnya"');
   if (!d.tanggal) throw new Error('Pilih jadwal kedatangan');
   await post('/booking', body);
   toast('Booking terkirim. Menunggu konfirmasi bengkel.');
@@ -167,12 +176,12 @@ async function riwayat() {
   return html`
     <div class="pagehead"><div><h1>Riwayat Saya</h1><p class="muted">Pantau status servis dan pesanan sparepart</p></div></div>
     <h2>Booking servis</h2>
-    ${bk.items.length ? bk.items.map(bookingCard) : html`<div class="panel empty">Belum ada booking. Mulai dari menu Cari Bengkel.</div>`}
+    ${bk.items.length ? bk.items.map(bookingCard) : emptyState('🔧', 'Belum ada booking', 'Mulai dari menu Cari Bengkel untuk booking servis pertama Anda.')}
     <h2 style="margin-top:22px">Pesanan sparepart</h2>
     ${ps.items.length ? ps.items.map((p) => html`
       <div class="card"><div class="row between"><div><b>Pesanan #${p.id}</b> <span class="muted">· ${tgl(p.tanggal)} · ${p.metode_pembayaran}</span></div><div>${badge(p.status)} <b>${rupiah(p.total)}</b></div></div>
         <div class="tablewrap"><table><tbody>${p.lines.map((l) => html`<tr><td>${l.nama} × ${l.qty}</td><td class="muted">${l.bengkel_nama}</td><td>${badge(l.status)}</td><td>${rupiah(l.subtotal)}</td></tr>`)}</tbody></table></div></div>`)
-      : html`<div class="panel empty">Belum ada pesanan sparepart.</div>`}`;
+      : emptyState('🛒', 'Belum ada pesanan sparepart', 'Belanja sparepart di menu Marketplace Sparepart.')}`;
 }
 
 function bookingCard(b) {
@@ -182,7 +191,7 @@ function bookingCard(b) {
       <div><h3>${b.bengkel_nama} <span class="muted">#${b.id}</span></h3><p class="muted">${b.kendaraan_merk} • ${b.kendaraan_nopol} · Jadwal ${tgl(b.tanggal_booking)}</p></div>
       <div>${badge(b.status)}</div>
     </div>
-    <p class="meta">Layanan: ${b.layanan.map((l) => l.nama_servis).join(', ')} · Mekanik: ${b.mekanik_nama || 'belum ditugaskan'}${b.jarak_km !== null ? ` · Jarak ${b.jarak_km} km` : ''}</p>
+    <p class="meta">Layanan: ${[...b.layanan.map((l) => l.nama_servis), b.layanan_lain ? `${b.layanan_lain} (layanan lain)` : ''].filter(Boolean).join(', ') || '—'} · Mekanik: ${b.mekanik_nama || 'belum ditugaskan'}${b.jarak_km !== null ? ` · Jarak ${b.jarak_km} km` : ''}</p>
     <p class="muted">Keluhan: ${b.keluhan}</p>
     ${b.sparepart.length ? html`<p class="muted">Sparepart dipakai: ${b.sparepart.map((s) => `${s.nama} ×${s.qty}`).join(', ')}</p>` : ''}
     ${b.invoice_id ? html`<p><b>Invoice: ${rupiah(b.invoice_total)}</b> ${badge(b.invoice_status)} ${b.invoice_metode ? html`<span class="muted">via ${b.invoice_metode}</span>` : ''}</p>` : ''}
@@ -202,7 +211,7 @@ function bookingCard(b) {
   </article>`;
 }
 
-actions.cancelBooking = async (el) => { if (!confirm('Batalkan booking ini?')) return; await post(`/booking/${el.dataset.id}/batal`); toast('Booking dibatalkan'); ctx.refresh(); };
+actions.cancelBooking = async (el) => { if (!(await confirmDialog('Batalkan booking ini? Tindakan ini tidak dapat dibatalkan.', { title: 'Batalkan booking', confirmLabel: 'Ya, batalkan', danger: true }))) return; await post(`/booking/${el.dataset.id}/batal`); toast('Booking dibatalkan'); ctx.refresh(); };
 actions.payBooking = async (form) => { await post(`/booking/${form.dataset.id}/bayar`, formData(form)); toast('Pembayaran berhasil (simulasi)'); ctx.refresh(); };
 actions.rateBooking = async (form) => { await post(`/booking/${form.dataset.id}/rating`, formData(form)); toast('Terima kasih atas penilaian Anda'); ctx.refresh(); };
 
@@ -232,6 +241,6 @@ async function akun() {
     ${passwordSection()}`;
 }
 actions.addVehicle = async (form) => { await post('/customer/kendaraan', formData(form)); toast('Kendaraan ditambahkan'); ctx.refresh(); };
-actions.delVehicle = async (el) => { if (!confirm('Hapus kendaraan ini?')) return; await del(`/customer/kendaraan/${el.dataset.id}`); toast('Kendaraan dihapus'); ctx.refresh(); };
+actions.delVehicle = async (el) => { if (!(await confirmDialog('Hapus kendaraan ini dari daftar Anda?', { title: 'Hapus kendaraan', confirmLabel: 'Hapus', danger: true }))) return; await del(`/customer/kendaraan/${el.dataset.id}`); toast('Kendaraan dihapus'); ctx.refresh(); };
 
 export const views = { cari, marketplace, riwayat, akun };

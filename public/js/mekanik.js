@@ -1,6 +1,6 @@
 import { api, post } from './api.js';
 import { state } from './state.js';
-import { html, actions, ctx, rupiah, tgl, badge, toast, formData } from './ui.js';
+import { html, actions, ctx, rupiah, tgl, badge, toast, formData, confirmDialog } from './ui.js';
 
 async function tugas() {
   const [bk, sp] = await Promise.all([api('/booking'), api('/mekanik/sparepart')]);
@@ -16,7 +16,7 @@ async function tugas() {
         <div><h3>#${b.id} · ${b.kendaraan_merk} • ${b.kendaraan_nopol}</h3><p class="muted">Customer: ${b.customer_nama} · Jadwal ${tgl(b.tanggal_booking)}</p></div>
         ${badge(b.status)}
       </div>
-      <p class="meta">Layanan: ${b.layanan.map((l) => l.nama_servis).join(', ')}</p>
+      <p class="meta">Layanan: ${[...b.layanan.map((l) => l.nama_servis), b.layanan_lain ? `${b.layanan_lain} (layanan lain)` : ''].filter(Boolean).join(', ') || '—'}</p>
       <p class="muted">Keluhan: ${b.keluhan}</p>
       ${b.sparepart.length ? html`<p class="muted">Sparepart dipakai: ${b.sparepart.map((s) => `${s.nama} ×${s.qty}`).join(', ')}</p>` : ''}
       <div class="actions">
@@ -32,11 +32,11 @@ async function tugas() {
     </article>`) : html`<div class="panel empty">Belum ada tugas. Tugas muncul setelah pihak bengkel menugaskan Anda.</div>`}
     <h2 style="margin-top:22px">Riwayat selesai</h2>
     ${riwayat.length ? html`<div class="panel tablewrap"><table><thead><tr><th>#</th><th>Kendaraan</th><th>Layanan</th><th>Tanggal</th></tr></thead><tbody>
-      ${riwayat.map((b) => html`<tr><td>${b.id}</td><td>${b.kendaraan_merk} • ${b.kendaraan_nopol}</td><td>${b.layanan.map((l) => l.nama_servis).join(', ')}</td><td>${tgl(b.tanggal_booking)}</td></tr>`)}</tbody></table></div>`
+      ${riwayat.map((b) => html`<tr><td>${b.id}</td><td>${b.kendaraan_merk} • ${b.kendaraan_nopol}</td><td>${[...b.layanan.map((l) => l.nama_servis), b.layanan_lain ? `${b.layanan_lain} (layanan lain)` : ''].filter(Boolean).join(', ') || '—'}</td><td>${tgl(b.tanggal_booking)}</td></tr>`)}</tbody></table></div>`
       : html`<div class="panel empty">Belum ada riwayat.</div>`}`;
 }
 actions.startJob = async (el) => { await post(`/booking/${el.dataset.id}/mulai`); toast('Status: Dikerjakan'); ctx.refresh(); };
-actions.finishJob = async (el) => { if (!confirm('Tandai servis ini selesai?')) return; await post(`/booking/${el.dataset.id}/selesai`); toast('Servis selesai. Bengkel akan menerbitkan invoice.'); ctx.refresh(); };
+actions.finishJob = async (el) => { if (!(await confirmDialog('Tandai servis ini selesai? Bengkel akan menerbitkan invoice.', { title: 'Selesaikan servis', confirmLabel: 'Ya, selesai' }))) return; await post(`/booking/${el.dataset.id}/selesai`); toast('Servis selesai. Bengkel akan menerbitkan invoice.'); ctx.refresh(); };
 actions.addPart = async (form) => { await post(`/booking/${form.dataset.id}/sparepart`, formData(form)); toast('Sparepart dicatat, stok berkurang'); ctx.refresh(); };
 
 export const views = { tugas };

@@ -1,0 +1,30 @@
+services:
+  app:
+    build: .
+    image: bengkelku:latest
+    container_name: bengkelku
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      DB_PATH: /data/bengkelku.db
+      # Wajib. Buat di .env: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET wajib diisi di file .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@bengkelku.id}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin12345}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+    volumes:
+      # Data SQLite persisten: tidak hilang saat container di-restart/di-update.
+      - bengkelku-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  bengkelku-data:

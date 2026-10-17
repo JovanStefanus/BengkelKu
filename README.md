@@ -2,7 +2,7 @@
 
 Aplikasi web full-stack: pelanggan mencari bengkel dalam radius 5–10 km, booking servis, memantau progres, dan membeli sparepart di marketplace. Terdiri dari 4 peran dengan dashboard terpisah: **Customer, Mitra Bengkel, Mekanik, Admin Platform**.
 
-**Teknologi:** Node.js (≥ 22) · Express 5 · SQLite (`better-sqlite3`) · JWT di cookie `HttpOnly` · bcrypt · Nodemailer (opsional) · frontend vanilla JS (ES modules, tanpa build step) · peta Leaflet + OpenStreetMap.
+**Teknologi:** Node.js (≥ 22) · Express 5 · SQLite (`better-sqlite3`) · JWT di cookie `HttpOnly` · bcrypt · Nodemailer (opsional) · frontend vanilla JS (ES modules, tanpa build step) · peta Leaflet + OpenStreetMap · Docker (opsional, lihat di bawah).
 
 ## Menjalankan di komputer sendiri
 
@@ -27,6 +27,30 @@ Akun demo lain: `rina@example.com`, `sinta@example.com` (customer), `mitra2..mit
 
 **Jika `npm install` gagal dengan error `node-gyp`:** pastikan Node.js ≥ 22 (`node -v`). Paket `better-sqlite3` sudah membawa binary siap pakai untuk Windows/macOS/Linux sehingga tidak perlu compiler; gunakan `npm install` (bukan `npm ci`) dan **jangan memakai `package-lock.json` hasil mesin lain** — hapus file itu lalu ulangi `npm install`.
 
+### Menjalankan dengan Docker (tanpa memasang Node.js)
+
+Butuh Docker Desktop. `Dockerfile` dan `docker-compose.yml` sudah tersedia di repo ini.
+
+```bash
+cp .env.example .env      # (Windows: copy .env.example .env) — isi JWT_SECRET, lihat catatan di bawah
+docker compose up -d --build
+# buka http://localhost:3000
+```
+
+`docker-compose.yml` menjalankan aplikasi dengan **volume bernama `bengkelku-data`** yang dipasang di `/data`, jadi database SQLite tetap tersimpan walau container di-restart atau di-update. `DB_PATH` otomatis diarahkan ke `/data/bengkelku.db`.
+
+```bash
+docker compose logs -f                              # lihat log
+docker compose down                                 # hentikan (data tetap ada)
+docker compose down -v                              # hentikan + hapus database
+docker compose exec app node src/seed.js --reset    # reset isi database
+```
+
+Catatan Docker:
+- `JWT_SECRET` **wajib** diisi di `.env` (compose menolak start bila kosong). Generate: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`.
+- Akun admin memakai `ADMIN_EMAIL` / `ADMIN_PASSWORD` dari `.env`; bila dibiarkan kosong, defaultnya `admin@bengkelku.id` / `admin12345`.
+- `.env` sudah masuk `.gitignore`, jadi rahasia tidak ikut ke Git.
+
 ## Login & daftar per peran
 
 Halaman login punya 4 pilihan peran. Peran yang dipilih **dicocokkan dengan peran di database** oleh server, jadi memilih "Admin Platform" dengan akun customer akan ditolak. Setelah login, tiap peran masuk ke dashboard sendiri dan tidak bisa membuka halaman/API peran lain.
@@ -46,11 +70,12 @@ Semua peran bisa memakai "Lupa password?" di halaman login (lewat email akun).
 - **Notifikasi:** ikon 🔔 di pojok atas menampilkan jumlah yang belum dibaca. Notifikasi dibuat otomatis untuk: booking baru/diterima/ditolak/dibatalkan, servis dimulai/selesai, invoice terbit, pembayaran, rating, pesanan sparepart, pendaftaran mitra, dan persetujuan admin. Klik notifikasi untuk membuka halaman terkait.
 - **Akun Saya (semua peran):** ubah nama & no. HP, ganti password. Customer juga mengelola daftar kendaraan. Mitra Bengkel bisa mereset password mekaniknya.
 - **Lupa password:** halaman `#/lupa` mengirim tautan berlaku 30 menit, sekali pakai. Setelah password diganti/di-reset, semua sesi login lama otomatis berakhir.
+- **Tampilan:** tema terang/gelap lewat tombol 🌙/☀️ di header (mengikuti preferensi sistem dan diingat di browser), skeleton saat halaman dimuat, dialog konfirmasi sendiri (bukan popup bawaan browser), toast yang bisa ditutup, serta aksesibilitas dasar (skip link, fokus pindah ke judul halaman, `aria` pada dialog & notifikasi).
 
 ## Alur utama
 
 1. Customer membuka **Cari Bengkel**, lokasi diambil dari GPS browser (atau titik default Bandung), memilih radius 5/10/25 km. Server menghitung jarak dengan rumus Haversine dan mengurutkan dari yang terdekat.
-2. Customer memilih bengkel dan mengirim booking (layanan, kendaraan, jadwal, keluhan). **Customer tidak memilih mekanik.**
+2. Customer memilih bengkel dan mengirim booking (layanan, kendaraan, jadwal, keluhan). Bila layanan yang dibutuhkan **tidak ada di daftar bengkel**, customer mencentang **"Layanan lainnya"** dan menuliskan layanan bebas (teks 3–120 karakter), boleh tanpa memilih layanan dari daftar. **Customer tidak memilih mekanik.**
 3. Mitra Bengkel menerima booking sekaligus **menugaskan mekanik**, atau menolaknya.
 4. Mekanik: Mulai kerjakan → catat sparepart yang dipakai (stok berkurang otomatis) → Tandai selesai.
 5. Mitra menerbitkan invoice (jasa + sparepart). Customer membayar (simulasi) atau Mitra menandai lunas untuk pembayaran tunai. Customer memberi rating.
@@ -69,11 +94,14 @@ src/mailer.js          Pengiriman email (SMTP opsional)   src/notify.js  Pembuat
 public/                Frontend (index.html, css/, js/ — satu file per peran, map.js, shared.js)
 public/vendor/leaflet/ Leaflet 1.9.4 (BSD-2) disalin lokal karena CSP hanya mengizinkan skrip dari server sendiri
 test/                  api.test.js (alur utama & hak akses), features.test.js (reset password, profil, notifikasi)
+Dockerfile             Image Node 22 + SQLite (user non-root, HEALTHCHECK)
+docker-compose.yml     Menjalankan app + volume permanen untuk database
+.dockerignore          Mengecualikan node_modules, data, .env dari build context
 ```
 
 ## Kesesuaian dengan diagram
 
-- **ERD → tabel:** `users`, `bengkel`, `mekanik`, `kendaraan`, `jenis_servis`, `booking`, `booking_detail`, `sparepart`, `pemakaian_sparepart`, `pesanan_sparepart`, `pesanan_detail`, `invoice`, `rating`. Tambahan dibanding diagram: kolom `aktif` (hapus = nonaktifkan agar riwayat tetap utuh), `mekanik.id_user` (akun login mekanik), dan status per baris pesanan sparepart.
+- **ERD → tabel:** `users`, `bengkel`, `mekanik`, `kendaraan`, `jenis_servis`, `booking`, `booking_detail`, `sparepart`, `pemakaian_sparepart`, `pesanan_sparepart`, `pesanan_detail`, `invoice`, `rating`. Tambahan dibanding diagram: kolom `aktif` (hapus = nonaktifkan agar riwayat tetap utuh), `mekanik.id_user` (akun login mekanik), status per baris pesanan sparepart, dan `booking.layanan_lain` (layanan bebas bila tidak ada di daftar bengkel).
 - **Use case → fitur:** semua use case di diagram punya halaman dan endpoint (lihat `src/routes/*`).
 - **Activity diagram:** status booking `Menunggu Verifikasi → Diterima → Dikerjakan → Selesai` (atau `Ditolak` / `Dibatalkan`); perpindahan status dijaga di server sehingga tidak bisa melompati langkah.
 
@@ -85,8 +113,10 @@ Aplikasi ini satu proses Node.js yang berjalan terus (bukan fungsi serverless) d
 |---|---|---|
 | Render (Web Service) | Ya, tanpa ubah kode | Paket gratis tersedia, tetapi tidur setelah 15 menit tanpa trafik dan filesystem-nya sementara. Disk permanen hanya di paket berbayar |
 | Railway | Ya | Ada masa percobaan berkredit, lalu paket gratis sangat kecil atau Hobby ± $5/bulan. Mendukung volume permanen |
-| Fly.io | Ya (perlu Dockerfile) | Akun baru tidak punya paket gratis; bayar per pemakaian (mesin kecil beberapa dolar/bulan) |
+| Fly.io | Ya (Dockerfile sudah ada) | Akun baru tidak punya paket gratis; bayar per pemakaian (mesin kecil beberapa dolar/bulan) |
 | Vercel | Tidak untuk versi SQLite ini | Perlu pindah ke database server (PostgreSQL/Turso) dan memecah Express jadi fungsi serverless |
+
+Repo ini sudah menyertakan `Dockerfile` dan `docker-compose.yml`, jadi platform apa pun yang bisa menjalankan container (Fly.io, Railway, Cloud Run, VPS, dll.) bisa langsung build dari repo ini. Untuk data permanen, pasang volume dan arahkan `DB_PATH` ke volume tersebut.
 
 Contoh di **Render** (Web Service dari repository GitHub):
 
@@ -121,6 +151,7 @@ Contoh di **Render** (Web Service dari repository GitHub):
 ## Batasan & pengembangan lanjutan
 
 - Jarak = garis lurus (Haversine), bukan jarak tempuh jalan. Belum ada pencarian alamat (geocoding) di peta; lokasi dipilih lewat klik peta, GPS, atau koordinat.
+- **"Layanan lainnya"** hanya menyimpan teks (belum ada harga). Jika customer booking hanya dengan layanan lain, komponen jasa pada invoice bernilai Rp 0; mitra dapat menambahkan sparepart atau menandai lunas (tunai) sesuai kesepakatan.
 - Pembayaran masih simulasi (belum terhubung payment gateway seperti Midtrans/Xendit).
 - Email akun tidak bisa diubah dan belum diverifikasi saat daftar. Notifikasi hanya di dalam aplikasi (belum lewat email/WhatsApp/push). Belum ada upload foto bengkel/sparepart.
 - Belum ada komisi platform; belum ada migrasi database terversi.
